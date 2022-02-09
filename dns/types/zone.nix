@@ -10,35 +10,37 @@
 let
   inherit (builtins) attrValues filter map removeAttrs;
   inherit (lib) concatMapStringsSep concatStringsSep mapAttrs
-                     mapAttrsToList optionalString;
+    mapAttrsToList optionalString;
   inherit (lib) mkOption literalExample types;
 
   inherit (import ./record.nix { inherit lib; }) recordType writeRecord;
 
   rsubtypes = import ./records { inherit lib; };
-  rsubtypes' = removeAttrs rsubtypes ["SOA"];
+  rsubtypes' = removeAttrs rsubtypes [ "SOA" ];
 
   subzoneOptions = {
     subdomains = mkOption {
       type = types.attrsOf subzone;
-      default = {};
+      default = { };
       example = {
         www = {
-          A = [ { address = "1.1.1.1"; } ];
+          A = [{ address = "1.1.1.1"; }];
         };
         staging = {
-          A = [ { address = "1.0.0.1"; } ];
+          A = [{ address = "1.0.0.1"; }];
         };
       };
       description = "Records for subdomains of the domain";
     };
   } //
-    mapAttrs (n: t: mkOption rec {
+  mapAttrs
+    (n: t: mkOption rec {
       type = types.listOf (recordType t);
-      default = [];
+      default = [ ];
       # example = [ t.example ];  # TODO: any way to auto-generate an example for submodule?
       description = "List of ${n} records for this zone/subzone";
-    }) rsubtypes';
+    })
+    rsubtypes';
 
   subzone = types.submodule {
     options = subzoneOptions;
@@ -54,8 +56,8 @@ let
       writeSubzone' = subname: writeSubzone "${subname}.${name}";
       sub = concatStringsSep "\n\n" (mapAttrsToList writeSubzone' zone.subdomains);
     in
-      concatStringsSep "\n\n" groups'
-      + optionalString (sub != "") ("\n\n" + sub);
+    concatStringsSep "\n\n" groups'
+    + optionalString (sub != "") ("\n\n" + sub);
 
   zone = types.submodule ({ name, ... }: {
     options = {
@@ -79,13 +81,14 @@ let
     } // subzoneOptions;
 
     config = {
-      __toString = zone@{ TTL, SOA, ... }:
+      __toString = zone@{ TTL, SOA, NS, ... }:
         ''
           $TTL ${toString TTL}
 
           ${writeRecord name rsubtypes.SOA SOA}
+          ${lib.concatStringsSep "\n" (builtins.map (writeRecord name rsubtypes.NS) NS)}
 
-          ${writeSubzone name zone}
+          ${writeSubzone name (zone // { NS = [ ]; })}
         '';
     };
   });
